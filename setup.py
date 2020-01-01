@@ -9,4 +9,4 @@ setup(name='sciprob',
       description='The pedagogical ML library.',
       packages=find_packages(exclude=['tests']),
       long_description=open('README.md').read(),
-      zip_safe=False)
+      zip_safe=False, install_requires=['numpy'])
