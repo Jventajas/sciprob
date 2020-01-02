@@ -1,7 +1,9 @@
+import sys
 import numpy as np
 import math
 from abc import ABC, abstractmethod
 from utils import ncr
+from scipy.special import gammaincc, gammainccinv
 
 
 class Distribution(ABC):
@@ -138,13 +140,13 @@ class Bernoulli(DiscreteDistribution):
         else:
             return 1
 
-    def entropy(self, nats=True):
+    def entropy(self):
         cument = 0
         for x in self.support:
             cument += self.probability(x) * math.log2(self.probability(x))
         return - cument
 
-    def kl_divergence(self, distribution, nats=True):
+    def kl_divergence(self, distribution):
         super().kl_divergence(distribution)
         div = 0
         for v in self.support:
@@ -235,13 +237,13 @@ class Categorical(DiscreteDistribution):
     def value(self, probability):
         pass
 
-    def entropy(self, nats=True):
+    def entropy(self):
         cument = 0
         for x in self.support:
             cument += self.probability(x) * math.log2(self.probability(x))
         return - cument
 
-    def kl_divergence(self, distribution, nats=True):
+    def kl_divergence(self, distribution):
         super().kl_divergence(distribution)
         div = 0
         for v in self.support:
@@ -324,7 +326,7 @@ class Binomial(DiscreteDistribution):
         return {'n': self.n, 'p': self.p}
 
     def entropy(self):
-        return (1./2) * math.log2(2 * math.pi * math.e * self.n * self.p * (1 - self.p) + 1e-6)
+        return (1. / 2) * math.log2(2 * math.pi * math.e * self.n * self.p * (1 - self.p) + 1e-6)
 
     def kl_divergence(self, distribution):
         div = 0.
@@ -333,9 +335,70 @@ class Binomial(DiscreteDistribution):
         return - div
 
 
+class Poisson(DiscreteDistribution):
+
+    def __init__(self, lamb):
+        super().__init__(range(sys.maxsize))
+        self.lamb = lamb
+
+    @property
+    def lamb(self):
+        return self._lamb
+
+    @lamb.setter
+    def lamb(self, value):
+        if value <= 0:
+            raise ValueError("Lambda parameter must be a positive real.")
+        self._lamb = value
+
+    def probability(self, value):
+        return (self.lamb ** value) * math.exp(-self.lamb) / math.factorial(value)
+
+    def cumulative_probability(self, value):
+        #TODO: Check if args are in the right order
+        return gammaincc(math.floor(value + 1), self.lamb)
+
+    def value(self, probability):
+        #TODO: Check if you need to subtract 1 from the result
+        #TODO: Check if args are in the right order
+        return gammainccinv(probability, self.lamb)
+
+    def mean(self):
+        return self.lamb
+
+    def median(self):
+        return math.floor(self.lamb + 1/3 - 0.02/self.lamb)
+
+    def mode(self):
+        return math.floor(self.lamb)
+
+    def variance(self):
+        return self.lamb
+
+    def std(self):
+        return math.sqrt(self.lamb)
+
+    def skewness(self):
+        return self.lamb ** (-1/2)
+
+    def excess_kurtosis(self):
+        return 1. / self.lamb
+
+    def get_params(self):
+        return {'lambda': self.lamb}
+
+    def entropy(self):
+        # TODO: Check if it works well for small lambda
+        return (1/2) * math.log2(2*math.pi*math.e*self.lamb) \
+               - 1/(12*self.lamb) - 1/(24*self.lamb**2) - 19/(360*self.lamb**3)
+
+    def kl_divergence(self, distribution):
+        if type(distribution) is not Poisson:
+            raise NotImplementedError("Only KL between Poisson distributions is implemented.")
+        return distribution.lamb - self.lamb + self.lamb * math.log2(self.lamb/distribution.lamb)
 
 
-#class Normal(ContinuousDistribution):
+# class Normal(ContinuousDistribution):
 #
 #    def __init__(self, mu, sigma):
 #        self.mu = mu
