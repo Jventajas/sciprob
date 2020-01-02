@@ -2,7 +2,8 @@ import sys
 import numpy as np
 import math
 from abc import ABC, abstractmethod
-from utils import ncr
+from stats.combinatorics import ncr
+from numerical.special_functions import erf, ierf
 from scipy.special import gammaincc, gammainccinv
 
 
@@ -64,24 +65,17 @@ class Distribution(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def entropy(self):
+        raise NotImplementedError
+
+    @abstractmethod
     def kl_divergence(self, distribution):
         if self.support != distribution.support:
             raise ValueError("Both distributions must have the same support. Found {} and {}"
                              .format(self.support, distribution.support))
 
 
-class DiscreteDistribution(Distribution, ABC):
-
-    @abstractmethod
-    def entropy(self):
-        raise NotImplementedError
-
-
-class ContinuousDistribution(Distribution, ABC):
-    pass
-
-
-class Bernoulli(DiscreteDistribution):
+class Bernoulli(Distribution):
 
     def __init__(self, p):
         super().__init__(support=[0, 1])
@@ -161,7 +155,7 @@ class Bernoulli(DiscreteDistribution):
         return int(probability > (1 - self.p))
 
 
-class Categorical(DiscreteDistribution):
+class Categorical(Distribution):
 
     def __init__(self, probs):
         super().__init__(support=list(range(len(probs))))
@@ -252,7 +246,7 @@ class Categorical(DiscreteDistribution):
         return - div
 
 
-class Binomial(DiscreteDistribution):
+class Binomial(Distribution):
 
     def __init__(self, n, p):
         super().__init__(list(range(n)))
@@ -335,7 +329,7 @@ class Binomial(DiscreteDistribution):
         return - div
 
 
-class Poisson(DiscreteDistribution):
+class Poisson(Distribution):
 
     def __init__(self, lamb):
         super().__init__(range(sys.maxsize))
@@ -355,19 +349,19 @@ class Poisson(DiscreteDistribution):
         return (self.lamb ** value) * math.exp(-self.lamb) / math.factorial(value)
 
     def cumulative_probability(self, value):
-        #TODO: Check if args are in the right order
+        # TODO: Check if args are in the right order
         return gammaincc(math.floor(value + 1), self.lamb)
 
     def value(self, probability):
-        #TODO: Check if you need to subtract 1 from the result
-        #TODO: Check if args are in the right order
+        # TODO: Check if you need to subtract 1 from the result
+        # TODO: Check if args are in the right order
         return gammainccinv(probability, self.lamb)
 
     def mean(self):
         return self.lamb
 
     def median(self):
-        return math.floor(self.lamb + 1/3 - 0.02/self.lamb)
+        return math.floor(self.lamb + 1 / 3 - 0.02 / self.lamb)
 
     def mode(self):
         return math.floor(self.lamb)
@@ -379,7 +373,7 @@ class Poisson(DiscreteDistribution):
         return math.sqrt(self.lamb)
 
     def skewness(self):
-        return self.lamb ** (-1/2)
+        return self.lamb ** (-1 / 2)
 
     def excess_kurtosis(self):
         return 1. / self.lamb
@@ -389,36 +383,81 @@ class Poisson(DiscreteDistribution):
 
     def entropy(self):
         # TODO: Check if it works well for small lambda
-        return (1/2) * math.log2(2*math.pi*math.e*self.lamb) \
-               - 1/(12*self.lamb) - 1/(24*self.lamb**2) - 19/(360*self.lamb**3)
+        return (1 / 2) * math.log2(2 * math.pi * math.e * self.lamb) \
+               - 1 / (12 * self.lamb) - 1 / (24 * self.lamb ** 2) - 19 / (360 * self.lamb ** 3)
 
     def kl_divergence(self, distribution):
         if type(distribution) is not Poisson:
             raise NotImplementedError("Only KL between Poisson distributions is implemented.")
-        return distribution.lamb - self.lamb + self.lamb * math.log2(self.lamb/distribution.lamb)
+        else:
+            return distribution.lamb - self.lamb + self.lamb * math.log2(self.lamb / distribution.lamb)
 
 
-# class Normal(ContinuousDistribution):
-#
-#    def __init__(self, mu, sigma):
-#        self.mu = mu
-#        self.sigma = sigma
-#
-#    def sample_pf(self, shape):
-#        return 1. / (self.sigma * np.sqrt(2 * np.pi)) * np.exp(-1. / 2 * ((shape - self.mu) / self.sigma) ** 2)
-#
-#    def sample_cdf(self, shape):
-#        raise NotImplementedError
-#
-#    def get_params(self):
-#        return {'mu': self.mu, 'sigma': self.sigma}
-#
-#    def value(self, probability):
-#        pass
-#
-#    def entropy(self):
-#        raise NotImplementedError
-#
-#    @abstractmethod
-#    def kl_divergence(self, distribution):
-#        raise NotImplementedError
+class Normal(Distribution):
+
+    def __init__(self, mu, sigma):
+        super().__init__(support='R')
+        self.mu = mu
+        self.sigma = sigma
+
+    @property
+    def mu(self):
+        return self._mu
+
+    @mu.setter
+    def mu(self, value):
+        self._mu = value
+
+    @property
+    def sigma(self):
+        return self._sigma
+
+    @sigma.setter
+    def sigma(self, value):
+        if value <= 0:
+            raise ValueError("Sigma must be a positive real.")
+        self._sigma = value
+
+    def probability(self, value):
+        return 1. / (self.sigma * np.sqrt(2 * math.pi)) * math.exp(-1. / 2 * ((value - self.mu) / self.sigma) ** 2)
+
+    def cumulative_probability(self, value):
+        return 1/2 * (1 + erf((value - self.mean())/(self.std()*math.sqrt(2))))
+
+    def value(self, probability):
+        return self.mean() + self.std() * math.sqrt(2) * ierf(2*probability - 1)
+
+    def mean(self):
+        return self.mu
+
+    def median(self):
+        return self.mu
+
+    def mode(self):
+        return self.mu
+
+    def variance(self):
+        return self.sigma ** 2
+
+    def std(self):
+        return self.sigma
+
+    def skewness(self):
+        return 0
+
+    def excess_kurtosis(self):
+        return 0
+
+    def get_params(self):
+        return {'mu': self.mu, 'sigma': self.sigma}
+
+    def entropy(self):
+        return (1/2) * math.log2(2*math.pi*math.e*(self.sigma**2))
+
+    @abstractmethod
+    def kl_divergence(self, distribution):
+        if type(distribution) is not Normal:
+            raise NotImplementedError("Only KL between Normal distributions is implemented.")
+        else:
+            return (1 / 2) * ((self.sigma / distribution.sigma) ** 2 + (distribution.mu - self.mu) ** 2 /
+                              (distribution.sigma ** 2) - 1 + 2 * math.log(distribution.sigma / self.sigma))
