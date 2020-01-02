@@ -21,11 +21,11 @@ class Distribution(ABC):
         self._support = value
 
     @abstractmethod
-    def probability(self, value):
+    def probability(self, x):
         raise NotImplementedError
 
     @abstractmethod
-    def cumulative_probability(self, value):
+    def cumulative_probability(self, x):
         raise NotImplementedError
 
     @abstractmethod
@@ -61,7 +61,7 @@ class Distribution(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def value(self, probability):
+    def quantile(self, p):
         raise NotImplementedError
 
     @abstractmethod
@@ -69,10 +69,10 @@ class Distribution(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def kl_divergence(self, distribution):
-        if self.support != distribution.support:
+    def kl_divergence(self, d):
+        if self.support != d.support:
             raise ValueError("Both distributions must have the same support. Found {} and {}"
-                             .format(self.support, distribution.support))
+                             .format(self.support, d.support))
 
 
 class Bernoulli(Distribution):
@@ -118,18 +118,18 @@ class Bernoulli(Distribution):
     def excess_kurtosis(self):
         return (1 - 6 * self.p * (1 - self.p)) / (self.p * (1 - self.p) + 1e-6)
 
-    def probability(self, value):
-        if value == 0:
+    def probability(self, x):
+        if x == 0:
             return 1 - self.p
-        elif value == 1:
+        elif x == 1:
             return self.p
         else:
             raise ValueError("The value is not in the support of this probability distribution")
 
-    def cumulative_probability(self, value):
-        if value < 0:
+    def cumulative_probability(self, x):
+        if x < 0:
             return 0
-        elif 0 <= value < 1:
+        elif 0 <= x < 1:
             return 1 - self.p
         else:
             return 1
@@ -140,19 +140,19 @@ class Bernoulli(Distribution):
             cument += self.probability(x) * math.log2(self.probability(x))
         return - cument
 
-    def kl_divergence(self, distribution):
-        super().kl_divergence(distribution)
+    def kl_divergence(self, d):
+        super().kl_divergence(d)
         div = 0
         for v in self.support:
             div += self.probability(v) \
-                   * math.log2(distribution.probability(v) / self.probability(v))
+                   * math.log2(d.probability(v) / self.probability(v))
         return - div
 
     def get_params(self):
         return {'theta': self.p}
 
-    def value(self, probability):
-        return int(probability > (1 - self.p))
+    def quantile(self, p):
+        return int(p > (1 - self.p))
 
 
 class Categorical(Distribution):
@@ -171,15 +171,15 @@ class Categorical(Distribution):
             raise ValueError("Probabilities must sum to 1.")
         self._probabilities = value
 
-    def probability(self, value):
-        if value not in self.support:
+    def probability(self, x):
+        if x not in self.support:
             raise ValueError("Value is not in the support of this distribution.")
-        return self.probabilities[value]
+        return self.probabilities[x]
 
-    def cumulative_probability(self, value):
+    def cumulative_probability(self, x):
         maxval = 0
         for i in self.support:
-            if value > i:
+            if x > i:
                 maxval = i
             else:
                 break
@@ -228,7 +228,7 @@ class Categorical(Distribution):
             'p{}'.format(x): p for x, p in zip(self.support, self.probabilities)
         }
 
-    def value(self, probability):
+    def quantile(self, p):
         pass
 
     def entropy(self):
@@ -237,12 +237,12 @@ class Categorical(Distribution):
             cument += self.probability(x) * math.log2(self.probability(x))
         return - cument
 
-    def kl_divergence(self, distribution):
-        super().kl_divergence(distribution)
+    def kl_divergence(self, d):
+        super().kl_divergence(d)
         div = 0
         for v in self.support:
             div += self.probability(v) \
-                   * math.log2(distribution.probability(v) / self.probability(v))
+                   * math.log2(d.probability(v) / self.probability(v))
         return - div
 
 
@@ -273,25 +273,25 @@ class Binomial(Distribution):
             raise ValueError("n must be greater or equal than 2.")
         self._n = value
 
-    def probability(self, value):
-        if value not in self.support:
+    def probability(self, x):
+        if x not in self.support:
             raise ValueError("The value is not in the support of this probability distribution")
-        return ncr(self.n, value) * (self.p ** value) * ((1 - self.p) ** (self.n - value))
+        return ncr(self.n, x) * (self.p ** x) * ((1 - self.p) ** (self.n - x))
 
-    def cumulative_probability(self, value):
+    def cumulative_probability(self, x):
         cumprob = 0.
         for x in self.support:
-            if value >= x:
+            if x >= x:
                 cumprob += self.probability(x)
             else:
                 return cumprob
         return cumprob
 
-    def value(self, probability):
+    def quantile(self, p):
         cumprob = 0.
         for x in self.support:
             cumprob += self.probability(x)
-            if cumprob >= probability:
+            if cumprob >= p:
                 return x
         return self.n - 1
 
@@ -322,10 +322,10 @@ class Binomial(Distribution):
     def entropy(self):
         return (1. / 2) * math.log2(2 * math.pi * math.e * self.n * self.p * (1 - self.p) + 1e-6)
 
-    def kl_divergence(self, distribution):
+    def kl_divergence(self, d):
         div = 0.
         for x in self.support:
-            div += self.probability(x) * math.log2(distribution.probability(x) / self.probability(x) + 1e-6)
+            div += self.probability(x) * math.log2(d.probability(x) / self.probability(x) + 1e-6)
         return - div
 
 
@@ -345,17 +345,17 @@ class Poisson(Distribution):
             raise ValueError("Lambda parameter must be a positive real.")
         self._lamb = value
 
-    def probability(self, value):
-        return (self.lamb ** value) * math.exp(-self.lamb) / math.factorial(value)
+    def probability(self, x):
+        return (self.lamb ** x) * math.exp(-self.lamb) / math.factorial(x)
 
-    def cumulative_probability(self, value):
+    def cumulative_probability(self, x):
         # TODO: Check if args are in the right order
-        return gammaincc(math.floor(value + 1), self.lamb)
+        return gammaincc(math.floor(x + 1), self.lamb)
 
-    def value(self, probability):
+    def quantile(self, p):
         # TODO: Check if you need to subtract 1 from the result
         # TODO: Check if args are in the right order
-        return gammainccinv(probability, self.lamb)
+        return gammainccinv(p, self.lamb)
 
     def mean(self):
         return self.lamb
@@ -386,11 +386,11 @@ class Poisson(Distribution):
         return (1 / 2) * math.log2(2 * math.pi * math.e * self.lamb) \
                - 1 / (12 * self.lamb) - 1 / (24 * self.lamb ** 2) - 19 / (360 * self.lamb ** 3)
 
-    def kl_divergence(self, distribution):
-        if type(distribution) is not Poisson:
+    def kl_divergence(self, d):
+        if type(d) is not Poisson:
             raise NotImplementedError("Only KL between Poisson distributions is implemented.")
         else:
-            return distribution.lamb - self.lamb + self.lamb * math.log2(self.lamb / distribution.lamb)
+            return d.lamb - self.lamb + self.lamb * math.log2(self.lamb / d.lamb)
 
 
 class Normal(Distribution):
@@ -418,14 +418,14 @@ class Normal(Distribution):
             raise ValueError("Sigma must be a positive real.")
         self._sigma = value
 
-    def probability(self, value):
-        return 1. / (self.sigma * np.sqrt(2 * math.pi)) * math.exp(-1. / 2 * ((value - self.mu) / self.sigma) ** 2)
+    def probability(self, x):
+        return 1. / (self.sigma * np.sqrt(2 * math.pi)) * math.exp(-1. / 2 * ((x - self.mu) / self.sigma) ** 2)
 
-    def cumulative_probability(self, value):
-        return 1/2 * (1 + erf((value - self.mean())/(self.std()*math.sqrt(2))))
+    def cumulative_probability(self, x):
+        return 1/2 * (1 + erf((x - self.mean()) / (self.std() * math.sqrt(2))))
 
-    def value(self, probability):
-        return self.mean() + self.std() * math.sqrt(2) * ierf(2*probability - 1)
+    def quantile(self, p):
+        return self.mean() + self.std() * math.sqrt(2) * ierf(2 * p - 1)
 
     def mean(self):
         return self.mu
@@ -455,9 +455,73 @@ class Normal(Distribution):
         return (1/2) * math.log2(2*math.pi*math.e*(self.sigma**2))
 
     @abstractmethod
-    def kl_divergence(self, distribution):
-        if type(distribution) is not Normal:
+    def kl_divergence(self, d):
+        if type(d) is not Normal:
             raise NotImplementedError("Only KL between Normal distributions is implemented.")
         else:
-            return (1 / 2) * ((self.sigma / distribution.sigma) ** 2 + (distribution.mu - self.mu) ** 2 /
-                              (distribution.sigma ** 2) - 1 + 2 * math.log(distribution.sigma / self.sigma))
+            return (1 / 2) * ((self.sigma / d.sigma) ** 2 + (d.mu - self.mu) ** 2 /
+                              (d.sigma ** 2) - 1 + 2 * math.log(d.sigma / self.sigma))
+
+
+class Exponential(Distribution):
+
+    def __init__(self, lamb):
+        super().__init__(support='R0+')
+        self.lamb = lamb
+
+    @property
+    def lamb(self):
+        return self._lamb
+
+    @lamb.setter
+    def lamb(self, value):
+        if value <= 0:
+            raise ValueError("Lambda must be a positive real.")
+        self._lamb = value
+
+    def probability(self, x):
+        if x < 0:
+            raise ValueError("x must be in [0-inf)")
+        else:
+            return self.lamb*math.exp(-self.lamb*x)
+
+    def cumulative_probability(self, x):
+        return 1 - math.exp(-self.lamb*x)
+
+    def quantile(self, p):
+        if not 0 <= p <= 1:
+            raise ValueError("p must be in [0-1]")
+        else:
+            return -math.log(1 - p) / self.lamb
+
+    def mean(self):
+        return 1/self.lamb
+
+    def median(self):
+        return math.log(2)/self.lamb
+
+    def mode(self):
+        return 0
+
+    def variance(self):
+        return 1 / (self.lamb**2)
+
+    def std(self):
+        return 1/self.lamb
+
+    def skewness(self):
+        return 2
+
+    def excess_kurtosis(self):
+        return 6
+
+    def get_params(self):
+        return {'lambda': self.lamb}
+
+    def entropy(self):
+        return 1 - math.log(self.lamb)
+
+    def kl_divergence(self, d):
+        if type(d) != Exponential:
+            raise ValueError("Only KL between Normal distributions is implemented.")
+        return math.log(self.lamb / d.lamb) + (d.lamb / self.lamb) - 1
