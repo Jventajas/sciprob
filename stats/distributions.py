@@ -4,7 +4,7 @@ import math
 from abc import ABC, abstractmethod
 from stats.combinatorics import ncr
 from numerical.special_functions import erf, ierf
-from scipy.special import gammaincc, gammainccinv
+from scipy.special import gamma, gammainc, gammaincc, gammainccinv, digamma, beta, betainc, hyp2f1
 
 
 class Distribution(ABC):
@@ -525,3 +525,352 @@ class Exponential(Distribution):
         if type(d) != Exponential:
             raise ValueError("Only KL between Normal distributions is implemented.")
         return math.log(self.lamb / d.lamb) + (d.lamb / self.lamb) - 1
+
+
+class Beta(Distribution):
+
+    def __init__(self, a, b):
+        super().__init__(support='[0-1]')
+        self.a = a
+        self.b = b
+
+    @property
+    def a(self):
+        return self._a
+
+    @a.setter
+    def a(self, value):
+        if value <= 0:
+            raise ValueError("a must be a positive real.")
+        self._a = value
+
+    @property
+    def b(self):
+        return self._b
+
+    @b.setter
+    def b(self, value):
+        if value <= 0:
+            raise ValueError("a must be a positive real.")
+        self._b = value
+
+    def probability(self, x):
+        return (x**(self.a - 1) * (1 - x)**(self.b - 1)) / beta(self.a, self.b)
+
+    def cumulative_probability(self, x):
+        return betainc(self.a, self.b, x) / beta(self.a, self.b)
+
+    def quantile(self, p):
+        pass
+
+    def mean(self):
+        return self.a / (self.a + self.b)
+
+    def median(self):
+        pass
+
+    def mode(self):
+        if self.a > 1 and self.b > 1:
+            return (self.a-1)/(self.a + self.b - 2)
+        elif self.a == 1 and self.b == 1:
+            # any value between 0 and 1
+            return 0.5
+        elif self.a < 1 and self.b < 1:
+            # for these parameter values the pdf is bimodal.
+            return [0, 1]
+        elif self.a <= 1 < self.b:
+            return 0
+        elif self.a > 1 >= self.b:
+            return 1
+
+    def variance(self):
+        return self.a*self.b / ((self.a+self.b)**2 *(self.a+self.b+1))
+
+    def std(self):
+        return math.sqrt(self.variance())
+
+    def skewness(self):
+        return (2*(self.b - self.a) * math.sqrt(self.a + self.b + 1))\
+               / ((self.a + self.b + 2) * math.sqrt(self.a * self.b))
+
+    def excess_kurtosis(self):
+        num = 6 * ((self.a - self.b)**2 * (self.a + self.b + 1) - self.a*self.b*(self.a + self.b + 2))
+        den = self.a*self.b*(self.a+ self.b + 2)*(self.a + self.b + 3)
+        return num / den
+
+    def get_params(self):
+        return {'alpha': self.a, 'beta': self.b}
+
+    def entropy(self):
+        pass
+
+    def kl_divergence(self, d):
+        pass
+
+
+class Degenerate(Distribution):
+
+    def __init__(self, k):
+        super().__init__('{}'.format(k))
+        self.k = k
+
+    @property
+    def k(self):
+        return self._k
+
+    @k.setter
+    def k(self, value):
+        if not type(value) not in [float, int]:
+            raise ValueError("Expected numerical value.")
+        self._k = value
+
+    def probability(self, x):
+        if x == self.k:
+            return 1
+        else:
+            return 0
+
+    def cumulative_probability(self, x):
+        if x < self.k:
+            return 0
+        else:
+            return 1
+
+    def quantile(self, p):
+        return self.k
+
+    def mean(self):
+        return self.k
+
+    def median(self):
+        return self.k
+
+    def mode(self):
+        return self.k
+
+    def variance(self):
+        return 0
+
+    def std(self):
+        return 0
+
+    def skewness(self):
+        raise NotImplementedError("Skewness is undefined for the Degenerate distribution.")
+
+    def excess_kurtosis(self):
+        raise NotImplementedError("Excess kurtosis is undefined for the Degenerate distribution.")
+
+    def get_params(self):
+        return {'k': self.k}
+
+    def entropy(self):
+        return 0
+
+    def kl_divergence(self, d):
+        if type(d) is not Degenerate:
+            raise NotImplementedError("Only KL divergence between degenerate distributions is implemented.")
+        elif self.k != d.k:
+            raise ValueError('KL divergence is only defined on degenerate distributions with the same k value.')
+        else:
+            return 0
+
+
+class TStudent(Distribution):
+
+    def __init__(self, v):
+        super().__init__(support='R')
+        self.v = v
+
+    @property
+    def v(self):
+        return self._v
+
+    @v.setter
+    def v(self, value):
+        if value < 1:
+            raise ValueError("v should be greater than 1.")
+        self._v = value
+
+    def probability(self, x):
+        return 1 / (math.sqrt(self.v) * beta(1/2, self.v/2)) * (1 + x**2 / self.v) ** (- (self.v + 1) / 2)
+
+    def cumulative_probability(self, x):
+        return (1/2) + x * gamma((self.v + 1) / 2) * hyp2f1(1/2, (self.v + 1)/2, 3/2, x**2/self.v)\
+               / (math.sqrt(math.pi*self.v) * gamma(self.v/2))
+
+    def quantile(self, p):
+        pass
+
+    def mean(self):
+        return 0
+
+    def median(self):
+        return 0
+
+    def mode(self):
+        return 0
+
+    def variance(self):
+        if self.v > 2:
+            return self.v / (self.v-2)
+        else:
+            return math.inf
+
+    def std(self):
+        return math.sqrt(self.variance())
+
+    def skewness(self):
+        if self.v > 3:
+            return 0
+        else:
+            raise NotImplementedError("Skewness is undefined when v <= 3")
+
+    def excess_kurtosis(self):
+        if self.v > 4:
+            return 6 / (self.v - 4)
+        elif 2 < self.v <= 4:
+            return math.inf
+        else:
+            raise NotImplementedError("Skewness is undefined when v <= 2")
+
+    def get_params(self):
+        return {'v': self.v}
+
+    def entropy(self):
+        raise NotImplementedError("We are working on it, be patient.")
+
+    def kl_divergence(self, d):
+        raise NotImplementedError("We are working on it, be patient.")
+
+
+class Dirichlet(Distribution):
+
+    def __init__(self, alpha_vec):
+        super().__init__(support='(0-1)^{}'.format(len(alpha_vec)))
+        self.alpha_vec = alpha_vec
+
+    @property
+    def alpha_vec(self):
+        return self._alpha_vec
+
+    @alpha_vec.setter
+    def alpha_vec(self, value):
+        if len(value) < 2:
+            raise ValueError("Alpha vector must have at least two values.")
+        for a in value:
+            if a <= 0:
+                raise ValueError('Alpha values must be > 0.')
+        self._alpha_vec = value
+
+    def probability(self, x):
+        pass
+
+    def cumulative_probability(self, x):
+        pass
+
+    def mean(self):
+        pass
+
+    def median(self):
+        pass
+
+    def mode(self):
+        pass
+
+    def variance(self):
+        pass
+
+    def std(self):
+        pass
+
+    def skewness(self):
+        pass
+
+    def excess_kurtosis(self):
+        pass
+
+    def get_params(self):
+        pass
+
+    def quantile(self, p):
+        pass
+
+    def entropy(self):
+        pass
+
+    def kl_divergence(self, d):
+        pass
+
+    class Gamma(Distribution):
+
+        def __init__(self, a, b):
+            super().__init__(support='R0+')
+            self.a = a
+            self.b = b
+
+        @property
+        def a(self):
+            return self._a
+
+        @a.setter
+        def a(self, value):
+            if value <= 0:
+                raise ValueError("a must be > 0.")
+            self._a = value
+
+        @property
+        def b(self):
+            return self._b
+
+        @b.setter
+        def b(self, value):
+            if value <= 0:
+                raise ValueError("b must be > 0.")
+            self._b = value
+
+        def probability(self, x):
+            return self.b**self.a / gamma(self.a) * x**(self.a - 1) * math.exp(- self.b * x)
+
+        def cumulative_probability(self, x):
+            return 1 / gamma(self.a) * gammainc(self.a, self.b*x)
+
+        def quantile(self, p):
+            pass
+
+        def mean(self):
+            return self.a / self.b
+
+        def median(self):
+            pass
+
+        def mode(self):
+            pass
+
+        def variance(self):
+            return self.a / (self.b**2)
+
+        def std(self):
+            return math.sqrt(self.variance())
+
+        def skewness(self):
+            return 2 / math.sqrt(self.a)
+
+        def excess_kurtosis(self):
+            return 6 / self.a
+
+        def get_params(self):
+            return {'alpha': self.a, 'beta': self.b}
+
+        def entropy(self):
+            # TODO: It's in nats cause of the exp. What to do?
+            return self.a - math.log(self.b) + math.log(gamma(self.a)) + (1 - self.a)*digamma(self.a)
+
+        def kl_divergence(self, d):
+            a = (self.a - d.a)*digamma(self.a)
+            b = math.log2(gamma(self.a))
+            c = math.log2(gamma(d.a))
+            e = d.a*(math.log2(self.b) - math.log2(d.b))
+            f = self.a * (d.b - self.b) / self.b
+            return a - b + c + e + f
+
+
